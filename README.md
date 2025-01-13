@@ -1,7 +1,7 @@
 # 5G-AKA-BYOI
 
 This directory contains the prototype implementation of 5G-AKA-BYOI and the
-associated Tamarin model.
+associated Tamarin model. For review purposes only --- this repository needs cleanup!
 
 ## Licence
 
