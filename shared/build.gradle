@@ -1,0 +1,30 @@
+// Copyright (c) 2023-2024 Julian Parkin
+//
+// All rights reserved.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+plugins {
+    id 'java-library'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    api                'org.apache.commons:commons-lang3:3.12.0'
+    implementation     'org.bouncycastle:bcpkix-jdk18on:1.75'
+    implementation     'org.bouncycastle:bcprov-jdk18on:1.75'
+    testImplementation 'org.testng:testng:7.8.0'
+}
+
+test {
+    useTestNG()
+}

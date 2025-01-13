@@ -1,0 +1,201 @@
+// Copyright (c) 2024 Julian Parkin
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+theory andrews
+
+begin
+
+builtins: symmetric-encryption
+
+tactic: source_nonce
+presort: i
+prio:
+    regex "\(last\("
+prio:
+    regex "~~>"
+prio:
+    regex "!Client\("
+    regex "!Server\("
+prio:
+    regex "NonceSend\("
+prio:
+    regex "!KU\( ~k_"
+
+rule client_create:
+    [ Fr(~client)
+    , Fr(~k_c_s)
+    , !Server(~server)
+    ]
+  -->
+    [ !Client(~client, ~server, ~k_c_s) ]
+
+rule client_reveal_key:
+    [ !Client(~client, ~server, ~k_c_s) ]
+  --[ Rev(~client, <'k', ~k_c_s>)
+    , Rev(~server, <'k', ~k_c_s>)
+    ]->
+    [ Out(~k_c_s) ]
+
+rule client_msg1:
+    [ Fr(~nonce_c)
+    , Fr(~session)
+    , !Client(~client, ~server, ~k_c_s)
+    ]
+  --[ Begin(~session)
+    , NonceSend(~client, ~nonce_c)
+    ]->
+    [ Out(senc(<'c', ~nonce_c>, ~k_c_s))
+    , ClientState0(~client, ~session, ~nonce_c)
+    ]
+
+rule client_msg3:
+    [ In(senc(<'cs', ~nonce_c, nonce_s>, ~k_c_s))
+    , ClientState0(~client, ~session, ~nonce_c)
+    , !Client(~client, ~server, ~k_c_s)
+    ]
+  --[ NonceRecv(~client, nonce_s)
+    , Advance(~session)
+    ]->
+    [ Out(senc(<'s', nonce_s>, ~k_c_s))
+    , ClientState1(~client, ~nonce_c, ~session)
+    ]
+
+rule client_auth:
+    [ In(senc(<'k', nonce_c_from_s, k_session>, ~k_c_s))
+    , ClientState1(~client, ~nonce_c, ~session)
+    , !Client(~client, ~server, ~k_c_s)
+    ]
+  --[ Advance(~session)
+    , Commit(~client, ~server, <'client', 'server',  <'k_session', k_session>>)
+    , Honest(~client)
+    , Honest(~server)
+    , ClientNonceCheck(~client, nonce_c_from_s, ~nonce_c)
+    ]->
+    []
+
+rule server_create:
+    [ Fr(~server) ]
+  -->
+    [ !Server(~server) ]
+
+rule server_msg2:
+    [ Fr(~nonce_s)
+    , Fr(~session)
+    , In(senc(<'c', nonce_c>, ~k_c_s))
+    , !Client(~client, ~server, ~k_c_s)
+    , !Server(~server)
+    ]
+  --[ NonceRecv(~server,  nonce_c)
+    , NonceSend(~client, ~nonce_s)
+    , Begin(~session)
+    ]->
+    [ Out(senc(<'cs', nonce_c, ~nonce_s>, ~k_c_s))
+    , ServerState0(~server, ~session, ~nonce_s, nonce_c)
+    ]
+
+rule server_msg4:
+    [ Fr(~k_session)
+    , In(senc(<'s', ~nonce_s>, ~k_c_s))
+    , ServerState0(~server, ~session, ~nonce_s, nonce_c)
+    , !Client(~client, ~server, ~k_c_s)
+    , !Server(~server)
+    ]
+  --[ Advance(~session)
+    , Running(~server, ~client, <'server', 'client', <'k_session', ~k_session>>)
+    ]->
+    [ Out(senc(<'k', nonce_c, ~k_session>, ~k_c_s)) ]
+
+rule time_t0:
+    [] --[ TimeT0() ]-> []
+
+restriction time_t0_unique:
+    " All #t1 #t2. TimeT0()@t1 & TimeT0()@t2 ==> #t1 = #t2 "
+
+// Proven
+lemma source_nonce[sources, heuristic={source_nonce}]:
+    " All X n #i. NonceRecv(X, n)@i
+        ==> (Ex Y #j. NonceSend(Y, n)@j & #j < #i)
+          | (Ex   #j. KU(n)@j           & #j < #i) "
+
+// Proven
+lemma executability[heuristic=i]:
+    exists-trace
+    " Ex X Y t #i. Commit(X, Y, <'client', 'server', t>)@i
+        & not (Ex Z data #j. Rev(Z, data)@j) "
+
+// Proven
+lemma weak_agreement[heuristic=i]:
+    " All X Y t1 #i. Commit(X, Y, <'client', 'server', t1>)@i
+        ==> (Ex t2 #j. Running(Y, X, t2)@j)
+          | (Ex Z key #j. Rev(Z, <'k', key>)@j & Honest(Z)@i) "
+
+// Attack
+lemma modified_weak_agreement[heuristic=i]:
+    " All X Y t1 #i #t. Commit(X, Y, <'client', 'server', t1>)@i
+        & TimeT0()@t
+        & #t < #i
+        ==> (Ex t2 #j. Running(Y, X, t2)@j
+                & #t < #j)
+          | (Ex session #k #m. Advance(session)@k & Begin(session)@m
+                & #m < #t
+                & #t < #k)
+          | (Ex Z key #j. Rev(Z, <'k', key>)@j & Honest(Z)@i) "
+
+// Proven
+lemma modified_weak_agreement_fix[heuristic=i]:
+    " All X Y t1 #i #t. Commit(X, Y, <'client', 'server', t1>)@i
+        & TimeT0()@t
+        & #t < #i
+        ==> (Ex t2 #j. Running(Y, X, t2)@j
+                & #t < #j)
+          | (Ex session #k #m. Advance(session)@k & Begin(session)@m
+                & #m < #t
+                & #t < #k)
+          | (Ex Z n1 n2 #j. ClientNonceCheck(Z, n1, n2)@j
+                & not(n1 = n2)
+                & Honest(Z)@i)
+          | (Ex Z key #j. Rev(Z, <'k', key>)@j & Honest(Z)@i) "
+
+// Proven
+lemma noninjective_agreement[heuristic=i]:
+    " All X Y key #i. Commit(X, Y, <'client', 'server', <'k_session', key>>)@i
+        ==> (Ex #j. Running(Y, X, <'server', 'client', <'k_session', key>>)@j)
+          | (Ex Z key #j. Rev(Z, <'k', key>)@j & Honest(Z)@i) "
+
+// Attack
+lemma injective_agreement[heuristic=i]:
+    " All X Y key #i. Commit(X, Y, <'client', 'server', <'k_session', key>>)@i
+        ==> (Ex #j. Running(Y, X, <'server', 'client', <'k_session', key>>)@j
+                & not (Ex P Q #k. Commit(P, Q, <'client', 'server', <'k_session', key>>)@k
+                        & not(#k = #i)))
+          | (Ex Z key #j. Rev(Z, <'k', key>)@j & Honest(Z)@i) "
+
+// Proven
+lemma injective_agreement_fix[heuristic=i]:
+    " All X Y key #i. Commit(X, Y, <'client', 'server', <'k_session', key>>)@i
+        ==> (Ex #j. Running(Y, X, <'server', 'client', <'k_session', key>>)@j
+                & not (Ex P Q #k. Commit(P, Q, <'client', 'server', <'k_session', key>>)@k
+                        & not(#k = #i)))
+          | (Ex Z n1 n2 #j. ClientNonceCheck(Z, n1, n2)@j
+                & not(n1 = n2)
+                & Honest(Z)@i)
+          | (Ex Z key #j. Rev(Z, <'k', key>)@j & Honest(Z)@i) "
+
+end
